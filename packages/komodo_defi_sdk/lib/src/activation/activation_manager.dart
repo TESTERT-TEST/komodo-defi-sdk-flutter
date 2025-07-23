@@ -7,9 +7,12 @@ import 'package:komodo_defi_rpc_methods/komodo_defi_rpc_methods.dart'
     show PrivateKeyPolicy;
 import 'package:komodo_defi_sdk/src/_internal_exports.dart';
 import 'package:komodo_defi_sdk/src/balances/balance_manager.dart';
+import 'package:komodo_defi_types/komodo_defi_type_utils.dart' show retryStream;
 import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:logging/logging.dart';
 import 'package:mutex/mutex.dart';
+
+import 'base_strategies/activation_strategy_factory.dart';
 
 /// Manager responsible for handling asset activation lifecycle
 class ActivationManager {
@@ -19,8 +22,13 @@ class ActivationManager {
     this._assetHistory,
     this._customTokenHistory,
     this._assetLookup,
-    this._balanceManager,
-  );
+    this._balanceManager, {
+    IActivationStrategyFactory? activationStrategyFactory,
+    Duration? operationTimeout,
+  }) : _activationStrategyFactory =
+           activationStrategyFactory ??
+           const DefaultActivationStrategyFactory(),
+       _operationTimeout = operationTimeout ?? const Duration(seconds: 30);
 
   final ApiClient _client;
   final KomodoDefiLocalAuth _auth;
@@ -28,8 +36,9 @@ class ActivationManager {
   final CustomAssetHistoryStorage _customTokenHistory;
   final IAssetLookup _assetLookup;
   final IBalanceManager _balanceManager;
+  final IActivationStrategyFactory _activationStrategyFactory;
+  final Duration _operationTimeout;
   final _activationMutex = Mutex();
-  static const _operationTimeout = Duration(seconds: 30);
   static final _logger = Logger('ActivationManager');
 
   final Map<AssetId, _ActivationState> _activations = {};
@@ -64,7 +73,7 @@ class ActivationManager {
       'Activating ${assets.length} assets: '
       '${assets.map((a) => a.id.name).join(', ')}',
     );
-    final groups = _AssetGroup._groupByPrimary(assets, _assetLookup);
+    final groups = AssetGroup.groupByPrimary(assets, _assetLookup);
     _logger.fine('Created ${groups.length} asset groups for activation');
 
     for (final group in groups) {
@@ -82,28 +91,51 @@ class ActivationManager {
       }
 
       final registration = await _registerActivation(group.primary.id);
-
-      if (registration.isNew) {
-        _logger.info('Starting new activation for ${group.primary.id.name}');
-        yield* _startActivation(group, registration.state);
-      } else {
+      if (!registration.isNew) {
         _logger.fine(
           'Joining existing activation for ${group.primary.id.name}',
+          'Yielding state history and existing state to new subscribers',
         );
+
+        // Yield the full history and current state to new subscribers
+        // This allows new listeners to catch up on the activation progress
         yield* Stream.fromIterable(registration.state.history);
         yield* registration.state.controller.stream;
       }
+
+      _logger.info('Starting new activation for  ${group.primary.id.name}');
+      yield* retryStream(
+        () => _startActivation(group, registration.state),
+        // ignore: avoid_redundant_argument_values
+        maxAttempts: 3,
+        perAttemptTimeout: _operationTimeout,
+        shouldRetry: (e) => e is TimeoutException || e is Exception,
+        onRetry:
+            (attempt, error) => _logger.warning(
+              'Retry attempt #$attempt for ${group.primary.id.name} due to:'
+              '$error',
+            ),
+      );
     }
   }
 
   /// Check if asset and its children are already activated
-  Future<ActivationProgress> _checkActivationStatus(_AssetGroup group) async {
+  Future<ActivationProgress> _checkActivationStatus(AssetGroup group) async {
     _logger.fine(
       'Checking activation status for group ${group.primary.id.name}',
     );
     try {
-      final enabledCoins =
-          await _client.rpc.generalActivation.getEnabledCoins();
+      final enabledCoins = await _client.rpc.generalActivation
+          .getEnabledCoins()
+          .timeout(
+            _operationTimeout,
+            onTimeout:
+                () =>
+                    throw TimeoutException(
+                      'getEnabledCoins timed out',
+                      _operationTimeout,
+                    ),
+          );
       final enabledAssetIds =
           enabledCoins.result
               .map((coin) => _assetLookup.findAssetsByConfigId(coin.ticker))
@@ -157,8 +189,24 @@ class ActivationManager {
     await _protectedOperation(() async {
       final existing = _activations[assetId];
       if (existing != null) {
-        _logger.fine('Found existing activation state for ${assetId.name}');
-        state = existing;
+        if (existing.completer.isCompleted || existing.controller.isClosed) {
+          _logger.fine(
+            'Found completed activation state for ${assetId.name}, '
+            'creating new one',
+          );
+          _activations.remove(assetId);
+          state = _ActivationState(
+            controller: StreamController<ActivationProgress>.broadcast(),
+            completer: Completer<void>(),
+          );
+          _activations[assetId] = state;
+          isNew = true;
+        } else {
+          _logger.fine(
+            'Found existing active activation state for ${assetId.name}',
+          );
+          state = existing;
+        }
         return;
       }
 
@@ -176,7 +224,7 @@ class ActivationManager {
 
   /// Start activation for the given group and stream state to the controller
   Stream<ActivationProgress> _startActivation(
-    _AssetGroup group,
+    AssetGroup group,
     _ActivationState state,
   ) async* {
     _logger.fine('Starting activation for group ${group.primary.id.name}');
@@ -228,7 +276,7 @@ class ActivationManager {
           const PrivateKeyPolicy.contextPrivKey();
 
       _logger.fine('Creating activation strategy for ${group.primary.id.name}');
-      final activator = ActivationStrategyFactory.createStrategy(
+      final activator = _activationStrategyFactory.createStrategy(
         _client,
         privKeyPolicy,
       );
@@ -284,7 +332,7 @@ class ActivationManager {
 
   /// Handle completion of activation
   Future<void> _handleActivationComplete(
-    _AssetGroup group,
+    AssetGroup group,
     ActivationProgress progress,
     Completer<void> completer,
   ) async {
@@ -334,7 +382,9 @@ class ActivationManager {
         'Activation failed for ${group.primary.id.name}: ${progress.errorMessage}',
       );
       if (!completer.isCompleted) {
-        completer.completeError(progress.errorMessage ?? 'Unknown error');
+        completer.completeError(
+          Exception(progress.errorMessage ?? 'Unknown error'),
+        );
       }
     }
   }
@@ -356,8 +406,17 @@ class ActivationManager {
 
     _logger.fine('Getting currently active assets');
     try {
-      final enabledCoins =
-          await _client.rpc.generalActivation.getEnabledCoins();
+      final enabledCoins = await _client.rpc.generalActivation
+          .getEnabledCoins()
+          .timeout(
+            _operationTimeout,
+            onTimeout:
+                () =>
+                    throw TimeoutException(
+                      'getEnabledCoins timed out',
+                      _operationTimeout,
+                    ),
+          );
       final activeAssets =
           enabledCoins.result
               .map((coin) => _assetLookup.findAssetsByConfigId(coin.ticker))
@@ -403,7 +462,9 @@ class ActivationManager {
       _logger.fine('Cleaning up ${_activations.length} pending activations');
       for (final state in _activations.values) {
         if (!state.completer.isCompleted) {
-          state.completer.completeError('ActivationManager disposed');
+          state.completer.completeError(
+            Exception('ActivationManager disposed'),
+          );
         }
         if (!state.controller.isClosed) {
           await state.controller.close();
@@ -431,13 +492,13 @@ class _ActivationRegistration {
 }
 
 /// Internal class for grouping related assets
-class _AssetGroup {
-  _AssetGroup({required this.primary, this.children})
+class AssetGroup {
+  AssetGroup({required this.primary, this.children})
     : assert(
         children == null ||
             children.every((asset) => asset.id.parentId == primary.id),
         'All child assets must have the parent asset as their parent '
-        'primary ${primary.id}, child assets: $children',
+        'primary  ${primary.id}, child assets: $children',
       );
 
   final Asset primary;
@@ -447,12 +508,12 @@ class _AssetGroup {
   AssetId? get parentId =>
       children?.firstWhereOrNull((asset) => asset.id.isChildAsset)?.id.parentId;
 
-  static List<_AssetGroup> _groupByPrimary(
+  static List<AssetGroup> groupByPrimary(
     List<Asset> assets,
     IAssetLookup assetLookup,
   ) {
     _logger.fine('Grouping ${assets.length} assets by primary');
-    final groups = <AssetId, _AssetGroup>{};
+    final groups = <AssetId, AssetGroup>{};
 
     for (final asset in assets) {
       if (asset.id.parentId == null) {
@@ -465,7 +526,7 @@ class _AssetGroup {
             'preserving ${existing.children?.length ?? 0} children',
           );
         }
-        groups[asset.id] = _AssetGroup(
+        groups[asset.id] = AssetGroup(
           primary: asset,
           children: existing?.children,
         );
@@ -496,7 +557,7 @@ class _AssetGroup {
             'creating new group with child ${asset.id.name}',
           );
           // Create new group with the looked-up parent as primary
-          groups[parentId] = _AssetGroup(
+          groups[parentId] = AssetGroup(
             primary: parentAsset,
             children: {asset},
           );
@@ -505,7 +566,7 @@ class _AssetGroup {
             'Adding first child ${asset.id.name} to existing group '
             'for ${existing.primary.id.name}',
           );
-          groups[parentId] = _AssetGroup(
+          groups[parentId] = AssetGroup(
             primary: existing.primary,
             children: {asset},
           );
