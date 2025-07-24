@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kdf_sdk_example/blocs/auth/auth_bloc.dart';
@@ -10,6 +11,7 @@ import 'package:kdf_sdk_example/widgets/instance_manager/kdf_instance_drawer.dar
 import 'package:kdf_sdk_example/widgets/instance_manager/kdf_instance_state.dart';
 import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
+import 'package:logging/logging.dart';
 
 final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -17,6 +19,22 @@ final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Setup root logger
+  Logger.root.level = kDebugMode ? Level.FINEST : Level.INFO;
+  Logger.root.onRecord.listen((record) {
+    final message =
+        '[ [36m [1m [0m${record.level.name} [0m] '
+        '[${record.loggerName}] ${record.time}: ${record.message}';
+    if (record.error != null || record.stackTrace != null) {
+      debugPrint(message);
+      if (record.error != null) debugPrint('Error:  [31m${record.error} [0m');
+      if (record.stackTrace != null)
+        debugPrintStack(stackTrace: record.stackTrace);
+    } else {
+      debugPrint(message);
+    }
+  });
 
   // Create instance manager
   final instanceManager = KdfInstanceManager();

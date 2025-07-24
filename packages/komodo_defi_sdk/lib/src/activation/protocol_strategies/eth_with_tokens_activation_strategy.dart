@@ -1,9 +1,11 @@
 import 'package:komodo_defi_rpc_methods/komodo_defi_rpc_methods.dart';
 import 'package:komodo_defi_sdk/src/activation/_activation.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
+import 'package:logging/logging.dart';
 
 class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
   const EthWithTokensActivationStrategy(super.client, this.privKeyPolicy);
+  static final _logger = Logger('EthWithTokensActivationStrategy');
 
   /// The private key management policy to use for this strategy.
   /// Used for external wallet support.
@@ -46,9 +48,11 @@ class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
     List<Asset>? children,
   ]) async* {
     if (children?.isNotEmpty == true) {
+      _logger.fine(
+        'Starting activation for asset: ${asset.id.name} with ${children!.length} tokens, protocol: ${asset.protocol.subClass.formatted}, privKeyPolicy: $privKeyPolicy',
+      );
       yield ActivationProgress(
-        status:
-            'Activating ${asset.id.name} with ${children!.length} tokens...',
+        status: 'Activating ${asset.id.name} with ${children.length} tokens...',
         progressDetails: ActivationProgressDetails(
           currentStep: 'initialization',
           stepCount: 3,
@@ -60,6 +64,9 @@ class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
         ),
       );
     } else {
+      _logger.fine(
+        'Starting activation for asset: ${asset.id.name}, protocol: ${asset.protocol.subClass.formatted}, privKeyPolicy: $privKeyPolicy',
+      );
       yield ActivationProgress(
         status: 'Activating ${asset.id.name}...',
         progressDetails: ActivationProgressDetails(
@@ -100,7 +107,7 @@ class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
         ),
       );
 
-      yield ActivationProgress(
+      yield const ActivationProgress(
         status: 'Finalizing activation...',
         progressPercentage: 66,
         progressDetails: ActivationProgressDetails(
@@ -109,6 +116,9 @@ class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
         ),
       );
 
+      _logger.fine(
+        'Activation completed successfully for asset: ${asset.id.name}',
+      );
       yield ActivationProgress.success(
         details: ActivationProgressDetails(
           currentStep: 'complete',
@@ -122,6 +132,11 @@ class EthWithTokensActivationStrategy extends ProtocolActivationStrategy {
         ),
       );
     } catch (e, stack) {
+      _logger.severe(
+        'Exception during activation for asset: ${asset.id.name}',
+        e,
+        stack,
+      );
       yield ActivationProgress(
         status: 'Activation failed',
         errorMessage: e.toString(),

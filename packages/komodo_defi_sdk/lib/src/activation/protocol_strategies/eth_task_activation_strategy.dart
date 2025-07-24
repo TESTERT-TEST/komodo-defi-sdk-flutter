@@ -1,9 +1,11 @@
 import 'package:komodo_defi_rpc_methods/komodo_defi_rpc_methods.dart';
 import 'package:komodo_defi_sdk/src/activation/_activation.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
+import 'package:logging/logging.dart';
 
 class EthTaskActivationStrategy extends ProtocolActivationStrategy {
   const EthTaskActivationStrategy(super.client, this.privKeyPolicy);
+  static final _logger = Logger('EthTaskActivationStrategy');
 
   /// The private key management policy to use for this strategy.
   /// Used for external wallet support.
@@ -45,6 +47,9 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
   ]) async* {
     final protocol = asset.protocol as Erc20Protocol;
 
+    _logger.fine(
+      'Starting activation for asset: ${asset.id.name}, protocol: ${protocol.subClass.formatted}, privKeyPolicy: $privKeyPolicy',
+    );
     yield ActivationProgress(
       status: 'Starting ${asset.id.name} activation...',
       progressDetails: ActivationProgressDetails(
@@ -103,6 +108,9 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
 
         if (status.isCompleted) {
           if (status.status == 'Ok') {
+            _logger.fine(
+              'Activation completed successfully for asset: ${asset.id.name}',
+            );
             yield ActivationProgress.success(
               details: ActivationProgressDetails(
                 currentStep: 'complete',
@@ -115,6 +123,9 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
               ),
             );
           } else {
+            _logger.warning(
+              'Activation failed for asset: ${asset.id.name}, status: ${status.status}, details: ${status.details}',
+            );
             yield ActivationProgress(
               status: 'Activation failed: ${status.details}',
               errorMessage: status.details,
@@ -129,6 +140,12 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
           }
           isComplete = true;
         } else {
+          // Only log unexpected/unknown status for debugging
+          if (!_knownEthStatuses.contains(status.status)) {
+            _logger.fine(
+              'Unknown activation status for asset: ${asset.id.name}, status: ${status.status}',
+            );
+          }
           final progress = _parseEthStatus(status.status);
           yield ActivationProgress(
             status: progress.status,
@@ -143,6 +160,11 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
         }
       }
     } catch (e, stack) {
+      _logger.severe(
+        'Exception during activation for asset: ${asset.id.name}',
+        e,
+        stack,
+      );
       yield ActivationProgress(
         status: 'Activation failed',
         errorMessage: e.toString(),
@@ -157,6 +179,15 @@ class EthTaskActivationStrategy extends ProtocolActivationStrategy {
       );
     }
   }
+
+  static const Set<String> _knownEthStatuses = {
+    'ActivatingCoin',
+    'RequestingWalletBalance',
+    'ActivatingTokens',
+    'Finishing',
+    'WaitingForTrezorToConnect',
+    'FollowHwDeviceInstructions',
+  };
 
   ({String status, double percentage, String step, Map<String, dynamic> info})
   _parseEthStatus(String status) {
