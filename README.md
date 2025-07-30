@@ -5,7 +5,6 @@
 </p>
 
 # Komodo Defi Framework SDK for Flutter
-
 This is a series of Flutter packages for integrating the [Komodo DeFi Framework](https://komodoplatform.com/en/komodo-defi-framework.html) into Flutter applications. This enhances devex by providing an intuitive abstraction layer and handling all binary/media file fetching, reducing what previously would have taken months to understand the API and build a Flutter dApp with KDF integration into a few days.
 
 See the Komodo DeFi Framework (API) source repository at [KomodoPlatform/komodo-defi-framework](https://github.com/KomodoPlatform/komodo-defi-framework) and view the demo site (source in [example](./example)) project at [https://komodo-playground.web.app](https://komodo-playground.web.app).
