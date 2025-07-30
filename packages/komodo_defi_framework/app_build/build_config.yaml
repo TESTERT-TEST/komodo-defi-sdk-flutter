@@ -10,7 +10,7 @@ api:
   fetch_at_build_enabled: true
 
   source_urls:
-    - "https://api.github.com/repos/KomodoPlatform/komodo-defi-framework"
+    - "https://api.github.com/repos/TESTERT-TEST/komodo-defi-framework"
     - "https://sdk.devbuilds.komodo.earth"
 
   platforms:
