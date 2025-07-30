@@ -2,7 +2,6 @@ name: Roll KDF Version
 
 on:
   schedule:
-    # Run daily at midnight (UTC)
     - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
@@ -25,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
@@ -33,7 +34,6 @@ jobs:
         run: |
           cd packages/komodo_wallet_cli
           dart pub get
-
       - name: Determine branch from config
         id: determine-branch
         run: |
@@ -44,35 +44,29 @@ jobs:
           fi
           echo "Using branch: $BRANCH"
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-
       - name: Get source URLs from config
         id: get-source-urls
         run: |
           SOURCE_URLS=$(cat packages/komodo_defi_framework/app_build/build_config.json | jq -c '.api.source_urls')
           echo "source_urls=$SOURCE_URLS" >> $GITHUB_OUTPUT
           echo "Source URLs: $SOURCE_URLS"
-
       - name: Get current commit details
         id: current-details
         run: |
           COMMIT=$(cat packages/komodo_defi_framework/app_build/build_config.json | jq -r '.api.api_commit_hash')
           echo "commit=$COMMIT" >> $GITHUB_OUTPUT
-
       - name: Check for new commit
         id: check-updates
         run: |
           BRANCH="${{ steps.determine-branch.outputs.branch }}"
           CURRENT_COMMIT="${{ steps.current-details.outputs.commit }}"
-
           # Get latest commit for the branch
           TOKEN=${{ secrets.GITHUB_TOKEN }}
           RESPONSE=$(curl -s -H "Authorization: token $TOKEN" \
             "https://api.github.com/repos/KomodoPlatform/komodo-defi-framework/commits/$BRANCH")
           NEW_COMMIT=$(echo $RESPONSE | jq -r '.sha')
-
           echo "Current commit: $CURRENT_COMMIT"
           echo "Latest commit: $NEW_COMMIT"
-
           if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
             echo "New commit found!"
             echo "has_updates=true" >> $GITHUB_OUTPUT
@@ -90,6 +84,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
@@ -98,7 +95,6 @@ jobs:
         run: |
           cd packages/komodo_wallet_cli
           dart pub get
-
       - name: Create branch for roll
         run: |
           BRANCH="${{ needs.check-for-updates.outputs.branch }}"
@@ -106,8 +102,8 @@ jobs:
           SHORT_COMMIT="${NEW_COMMIT:0:7}"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git checkout -b kdf-roll/$BRANCH-$SHORT_COMMIT
-
       - name: Roll KDF version
         id: roll-version
         run: |
@@ -115,11 +111,9 @@ jobs:
           CURRENT_COMMIT="${{ needs.check-for-updates.outputs.current_commit }}"
           NEW_COMMIT="${{ needs.check-for-updates.outputs.new_commit }}"
           SOURCE_URLS='${{ needs.check-for-updates.outputs.source_urls }}'
-
           echo "Running update_api_config tool..."
           cd packages/komodo_wallet_cli
           mkdir -p ../komodo_defi_framework/app_build/temp_downloads
-
           # Try each source URL in order until one succeeds
           SUCCESS=false
           for SOURCE_URL in $(echo $SOURCE_URLS | jq -r '.[]'); do
@@ -149,46 +143,31 @@ jobs:
               echo "Failed to roll using $SOURCE_URL, trying next source..."
             fi
           done
-
           if [ "$SUCCESS" = false ]; then
             echo "All sources failed. Exiting with error."
             exit 1
           fi
-
-      - name: Commit changes
+      - name: Commit and push changes
         run: |
           BRANCH="${{ needs.check-for-updates.outputs.branch }}"
           NEW_COMMIT="${{ needs.check-for-updates.outputs.new_commit }}"
           SHORT_COMMIT="${NEW_COMMIT:0:7}"
-
-          # Check if there are changes to commit
           if git diff --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-
           git add packages/komodo_defi_framework/app_build/build_config.json
           git commit -m "chore: roll KDF version to commit $SHORT_COMMIT for branch $BRANCH"
           git push origin kdf-roll/$BRANCH-$SHORT_COMMIT
-
       - name: Create Pull Request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ needs.check-for-updates.outputs.branch }}"
           NEW_COMMIT="${{ needs.check-for-updates.outputs.new_commit }}"
           SHORT_COMMIT="${NEW_COMMIT:0:7}"
-
-          PR_TITLE="chore: roll KDF version to commit $SHORT_COMMIT for branch $BRANCH"
-          PR_BODY="This PR rolls the KDF version to the latest commit ($SHORT_COMMIT) for the '$BRANCH' branch.
-
-          **Changes:**
-          - Rolled KDF version from \`${{ needs.check-for-updates.outputs.current_commit }}\` to \`$NEW_COMMIT\`
-
-          This PR was automatically generated by GitHub Actions."
-
           gh pr create \
-            --title "$PR_TITLE" \
-            --body "$PR_BODY" \
+            --title "chore: roll KDF version to commit $SHORT_COMMIT for branch $BRANCH" \
+            --body "This PR rolls the KDF version to the latest commit ($SHORT_COMMIT) for the '$BRANCH' branch." \
             --base "$BRANCH" \
             --head "kdf-roll/$BRANCH-$SHORT_COMMIT"

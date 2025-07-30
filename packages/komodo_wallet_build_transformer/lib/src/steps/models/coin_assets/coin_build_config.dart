@@ -49,10 +49,10 @@ class CoinBuildConfig {
       coinsRepoBranch == 'master' || coinsRepoBranch == 'main';
 
   String get rawContentUrl =>
-      'https://raw.githubusercontent.com/KomodoPlatform/coins/refs/heads/$coinsRepoBranch';
+      'https://raw.githubusercontent.com/TESTERT-TEST/coins/refs/heads/$coinsRepoBranch';
 
   static const String cdnContentUrl =
-      'https://api.github.com/repos/KomodoPlatform/coins';
+      'https://api.github.com/repos/TESTERT-TEST/coins';
 
   /// Indicates whether fetching updates of the coins assets are enabled.
   final bool fetchAtBuildEnabled;
