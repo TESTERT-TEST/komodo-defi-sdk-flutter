@@ -1,3 +1,80 @@
+
+name: Roll KDF Version
+
+on:
+  schedule:
+    # Run daily at midnight (UTC)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to check for rolls (dev or main)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  check-for-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.check-updates.outputs.has_updates }}
+      branch: ${{ steps.determine-branch.outputs.branch }}
+      current_commit: ${{ steps.current-details.outputs.commit }}
+      new_commit: ${{ steps.check-updates.outputs.new_commit }}
+      source_urls: ${{ steps.get-source-urls.outputs.source_urls }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Dart SDK
+        uses: dart-lang/setup-dart@v1
+
+      - name: Install dependencies
+        run: |
+          cd packages/komodo_wallet_cli
+          dart pub get
+      - name: Determine branch from config
+        id: determine-branch
+        run: |
+          BRANCH=$(cat packages/komodo_defi_framework/app_build/build_config.json | jq -r '.api.branch')
+          # If workflow dispatch provided a branch, use that instead
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.branch }}" ]]; then
+            BRANCH="${{ github.event.inputs.branch }}"
+          fi
+          echo "Using branch: $BRANCH"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+      - name: Get source URLs from config
+        id: get-source-urls
+        run: |
+          SOURCE_URLS=$(cat packages/komodo_defi_framework/app_build/build_config.json | jq -c '.api.source_urls')
+          echo "source_urls=$SOURCE_URLS" >> $GITHUB_OUTPUT
+          echo "Source URLs: $SOURCE_URLS"
+      - name: Get current commit details
+        id: current-details
+        run: |
+          COMMIT=$(cat packages/komodo_defi_framework/app_build/build_config.json | jq -r '.api.api_commit_hash')
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+      - name: Check for new commit
+        id: check-updates
+        run: |
+          BRANCH="${{ steps.determine-branch.outputs.branch }}"
+          CURRENT_COMMIT="${{ steps.current-details.outputs.commit }}"
+          # Get latest commit for the branch
+          TOKEN=${{ secrets.GITHUB_TOKEN }}
+          RESPONSE=$(curl -s -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/KomodoPlatform/komodo-defi-framework/commits/$BRANCH")
+          NEW_COMMIT=$(echo $RESPONSE | jq -r '.sha')
+          echo "Current commit: $CURRENT_COMMIT"
+          echo "Latest commit: $NEW_COMMIT"
+          if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
+            echo "New commit found!"
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "new_commit=$NEW_COMMIT" >> $GITHUB_OUTPUT
+          else
+            echo "No updates available."
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
   roll-kdf-version:
     needs: check-for-updates
     if: ${{ needs.check-for-updates.outputs.has_updates == 'true' }}
