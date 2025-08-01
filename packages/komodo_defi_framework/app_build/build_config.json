@@ -63,9 +63,9 @@
     "coins": {
         "fetch_at_build_enabled": true,
         "update_commit_on_build": true,
-        "bundled_coins_repo_commit": "1fe493212b34937d82c668e6118a1356d7eb2f06",
-        "coins_repo_api_url": "https://api.github.com/repos/KomodoPlatform/coins",
-        "coins_repo_content_url": "https://komodoplatform.github.io/coins",
+        "bundled_coins_repo_commit": "220ec6b285ed04b7fff9046c64ff1e5b9ed878ff",
+        "coins_repo_api_url": "https://api.github.com/repos/TESTERT-TEST/coins",
+        "coins_repo_content_url": "https://testert-test.github.io/coins",
         "coins_repo_branch": "master",
         "runtime_updates_enabled": true,
         "mapped_files": {
@@ -78,8 +78,8 @@
         },
         "concurrent_downloads_enabled": true,
         "cdn_branch_mirrors": {
-            "master": "https://komodoplatform.github.io/coins",
-            "main": "https://komodoplatform.github.io/coins"
+            "master": "https://testert-test.github.io/coins",
+            "main": "https://testert-test.github.io/coins"
         }
     }
 }
