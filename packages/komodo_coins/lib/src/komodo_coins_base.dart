@@ -36,7 +36,7 @@ class KomodoCoins {
     if (_assets != null) return _assets!;
 
     final url = Uri.parse(
-      'https://komodoplatform.github.io/coins/utils/coins_config_unfiltered.json',
+      'https://testert-test.github.io/coins/utils/coins_config_unfiltered.json',
     );
 
     try {
@@ -134,7 +134,7 @@ class KomodoCoins {
   }
 
   static Future<JsonList> fetchAndTransformCoinsList() async {
-    const coinsUrl = 'https://komodoplatform.github.io/coins/coins';
+    const coinsUrl = 'https://testert-test.github.io/coins/coins';
 
     try {
       final response = await http.get(Uri.parse(coinsUrl));
