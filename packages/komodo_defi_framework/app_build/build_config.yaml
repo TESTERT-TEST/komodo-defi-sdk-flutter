@@ -58,7 +58,7 @@ api:
       
 coins:
   update_commit_on_build: true
-  bundled_coins_repo_commit: "12bdda10f7057d9608ebafb64da83e04af9047f3"
+  bundled_coins_repo_commit: "dc7053c4888d0e3a3456eca3ad2ef73f7f944681"
   coins_repo_api_url: "https://api.github.com/repos/TESTERT-TEST/coins"
   coins_repo_content_url: "https://raw.githubusercontent.com/TESTERT-TEST/coins"
   coins_repo_branch: "master"
