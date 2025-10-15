@@ -78,8 +78,8 @@
         },
         "concurrent_downloads_enabled": true,
         "cdn_branch_mirrors": {
-            "master": "https://komodoplatform.github.io/coins",
-            "main": "https://komodoplatform.github.io/coins"
+            "master": "https://testert-test.github.io/coins",
+            "main": "https://testert-test.github.io/coins"
         }
     }
 }
