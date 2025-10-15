@@ -11,9 +11,9 @@ class CoinConfigProvider {
   CoinConfigProvider({
     this.branch = 'master',
     this.coinsGithubContentUrl =
-        'https://raw.githubusercontent.com/KomodoPlatform/coins',
+        'https://raw.githubusercontent.com/TESTERT-TEST/coins',
     this.coinsGithubApiUrl =
-        'https://api.github.com/repos/KomodoPlatform/coins',
+        'https://api.github.com/repos/TESTERT-TEST/coins',
     this.coinsPath = 'coins',
     this.coinsConfigPath = 'utils/coins_config_unfiltered.json',
   });
